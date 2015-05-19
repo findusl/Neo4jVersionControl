@@ -1,0 +1,14 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>de.lehrbaum</groupId>
+  <artifactId>neo4jVersionControl</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <description>This plugin uses a second database to version control a neo4j database and provides an interface to get a state at a given time.</description>
+  <dependencies>
+  	<dependency>
+  		<groupId>org.neo4j</groupId>
+  		<artifactId>server-api</artifactId>
+  		<version>2.2.1</version>
+  	</dependency>
+  </dependencies>
+</project>
