@@ -35,6 +35,7 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 			writeChangedNodeProperties(data.removedNodeProperties(), timestamp, true);
 			writeChangeNodeLabels(data.assignedLabels(), timestamp, false);
 			writeChangeNodeLabels(data.removedLabels(), timestamp, true);
+			
 			//TODO: deal with Relationships
 			writeChangedNodes(data.deletedNodes(), timestamp, true);
 		} catch (Exception e) {
@@ -92,20 +93,23 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 	//some Methods creating parts of a query:
 	
 	private StringBuilder matchNode(long id) {
+		return matchNode(id, "n");
+	}
+	
+	private StringBuilder matchNode(long id, CharSequence nodeIdentifier) {
 		StringBuilder sb = new StringBuilder();
-		sb.append("MATCH (n)-[r1:VCShas {to:").append(Long.MAX_VALUE).append("}]->(:VCSID {id:")
-			.append(id).append("}) ");
+		sb.append("MATCH (").append(nodeIdentifier).append(")-[r1:VCShas {to:")
+			.append(Long.MAX_VALUE).append("}]->(:VCSID {id:").append(id).append("}) ");
 		return sb;
 	}
 	
 	private StringBuilder setProperty(long timestamp, boolean remove, CharSequence propName,
 		CharSequence propValue) {
 		StringBuilder sb = new StringBuilder();
-		sb.append("MERGE (p:VCSProperty {");
-		sb.append(propName).append(':').append(propValue);
+		sb.append("MERGE (p:VCSProperty {").append(propName).append(':').append(propValue);
 		if (remove) {
-			sb.append("}) MATCH n-[r2:VCShas {to:").append(Long.MAX_VALUE).append("}]->p");
-			sb.append(" SET r2.to=").append(timestamp);
+			sb.append("}) MATCH n-[r2:VCShas {to:").append(Long.MAX_VALUE).append("}]->p")
+				.append(" SET r2.to=").append(timestamp);
 		}
 		else
 			sb.append("}) CREATE n-(:VCShas {from:").append(timestamp).append(", to:")
