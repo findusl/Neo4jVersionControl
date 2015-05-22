@@ -5,6 +5,7 @@ import java.util.logging.Logger;
 
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.event.LabelEntry;
 import org.neo4j.graphdb.event.PropertyEntry;
 import org.neo4j.graphdb.event.TransactionData;
@@ -33,9 +34,10 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 			writeChangedNodes(data.createdNodes(), timestamp, false);
 			writeChangedNodeProperties(data.assignedNodeProperties(), timestamp, false);
 			writeChangedNodeProperties(data.removedNodeProperties(), timestamp, true);
-			writeChangeNodeLabels(data.assignedLabels(), timestamp, false);
-			writeChangeNodeLabels(data.removedLabels(), timestamp, true);
-			
+			writeChangedNodeLabels(data.assignedLabels(), timestamp, false);
+			writeChangedNodeLabels(data.removedLabels(), timestamp, true);
+			writeChangedRelationships(data.createdRelationships(), timestamp, false);
+			writeChangedRelationshipProperties(data.assignedRelationshipProperties(), timestamp, false);
 			//TODO: deal with Relationships
 			writeChangedNodes(data.deletedNodes(), timestamp, true);
 		} catch (Exception e) {
@@ -78,7 +80,7 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 		}
 	}
 	
-	private void writeChangeNodeLabels(Iterable<LabelEntry> assignedLabels, long timestamp,
+	private void writeChangedNodeLabels(Iterable<LabelEntry> assignedLabels, long timestamp,
 		boolean remove) {
 		for (LabelEntry entry : assignedLabels) {
 			Label label = entry.label();
@@ -86,6 +88,35 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 			StringBuilder query = new StringBuilder();
 			query.append(matchNode(n.getId()));
 			query.append(setProperty(timestamp, remove, "VCSLabel", label.name()));
+			logger.info("My query: " + query);
+		}
+	}
+	
+	private void writeChangedRelationships(Iterable<Relationship> relationships,
+		long timestamp, boolean delete) {
+		for (Relationship r : relationships) {
+			StringBuilder query = new StringBuilder();
+			if (!delete) {
+				query.append(matchNode(r.getStartNode().getId(), "ns"));
+				query.append(matchNode(r.getEndNode().getId(), "ne"));
+				query.append("CREATE ns-[:").append(r.getType().name()).append(" {VCSID:")
+					.append(r.getId()).append(", from:").append(timestamp).append(", to:")
+					.append(Long.MAX_VALUE).append("}]->ne ");
+			} else {
+				query.append(matchRelationship(r));
+				query.append("SET r.to=").append(timestamp);
+			}
+			logger.info("My query: " + query);
+		}
+	}
+	
+	private void writeChangedRelationshipProperties(
+		Iterable<PropertyEntry<Relationship>> relationships, long timestamp,
+		boolean delete) {
+		for (PropertyEntry<Relationship> entry : relationships) {
+			StringBuilder query = setRelationshipProperty(entry.entity().getId(), timestamp, delete,
+				entry.key(),
+				propertyString(entry.value()));
 			logger.info("My query: " + query);
 		}
 	}
@@ -100,6 +131,26 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 		StringBuilder sb = new StringBuilder();
 		sb.append("MATCH (").append(nodeIdentifier).append(")-[r1:VCShas {to:")
 			.append(Long.MAX_VALUE).append("}]->(:VCSID {id:").append(id).append("}) ");
+		return sb;
+	}
+	
+	private StringBuilder matchRelationship(Relationship r) {
+		StringBuilder sb = new StringBuilder();
+		sb.append(matchNode(r.getStartNode().getId(), "ns"));
+		sb.append(matchNode(r.getEndNode().getId(), "ne"));
+		sb.append("MATCH ns-[r {id:").append(r.getId()).append(", to:").append(Long.MAX_VALUE)
+			.append("}]->ne ");
+		return sb;
+	}
+	
+	private StringBuilder setRelationshipProperty(long relId, long timestamp, boolean remove,
+		CharSequence propName, CharSequence propValue) {
+		StringBuilder sb = new StringBuilder();
+		/*
+		 * MERGE (nRel:VCSRel {id:relId})
+		 * change the property on nRel
+		 */
+		//TODO:
 		return sb;
 	}
 	
