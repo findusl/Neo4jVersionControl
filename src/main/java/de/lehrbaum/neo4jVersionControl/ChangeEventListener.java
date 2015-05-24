@@ -17,6 +17,9 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 	
 	private Logger logger = Logger.getLogger("de.lehrbaum.neo4jVersionControl");
 	
+	/**
+	 * A jdbc connection to the VCS database.
+	 */
 	protected DatabaseConnection dbConnection;
 	
 	public ChangeEventListener(DatabaseConnection dbConnection) {
@@ -37,7 +40,7 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 			writeChangedNodeLabels(data.assignedLabels(), timestamp, false);
 			writeChangedNodeLabels(data.removedLabels(), timestamp, true);
 			writeChangedRelationships(data.createdRelationships(), timestamp, false);
-			writeChangedRelationshipProperties(data.assignedRelationshipProperties(), timestamp, false);
+			//writeChangedRelationshipProperties(data.assignedRelationshipProperties(), timestamp, false);
 			//TODO: deal with Relationships
 			writeChangedNodes(data.deletedNodes(), timestamp, true);
 		} catch (Exception e) {
@@ -45,38 +48,46 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 		}
 	}
 	
+	//================================================================================
+	// Node methods
+	//================================================================================
+	
 	private void writeChangedNodes(Iterable<Node> nodes, long timestamp, boolean remove) {
 		for (Node n : nodes) {
 			String query;
 			if (!remove)
-				query = "MERGE (idNode:VCSID {id:" + n.getId() + "}) CREATE ()-[:VCShas {from:"
+				query = "MERGE (idNode:VCSID {id:" + n.getId() + "}) CREATE (:VCSNode)-[:VCShas {from:"
 					+ timestamp + ", to:" + Long.MAX_VALUE + "}]->idNode";
 			else {
 				query = matchNode(n.getId()) + "SET r1.to=" + timestamp;
 			}
-			logger.info("My query: " + query);
+			dbConnection.executeQuery(query);
 		}
 	}
 	
 	private void writeChangedNodeProperties(Iterable<PropertyEntry<Node>> properties,
 		long timestamp, boolean remove) {
 		for (PropertyEntry<Node> entry : properties) {
-			/*MATCH (n)-[:VCShas {to:max}]->(:VCSID {id:nodeid})
-			MATCH n-[r2:VCShas {to:max}]->(p2:VCSProperty {prop_name:prop_old_value})
-			SET r2.to=curr
-			MERGE (p1:VCSProperty {prop_name:prop_new_value})
-			CREATE n-[:VCShas {from:curr, to:max}]->p1
-			*/
+			/*
+			 * MATCH (n:VCSNode)-[r1:VCShas {to:9223372036854775807}]->(:VCSID {id:0}) 
+			 * MERGE (p:VCSProperty {name:"John"}) 
+			 * MATCH n-[r2:VCShas {to:9223372036854775807}]->p 
+			 * SET r2.to=1432506654808 
+			 * MERGE (p:VCSProperty {name:"Max"}) 
+			 * CREATE n-[:VCShas {from:1432506654808, to:9223372036854775807}]->p*/
+			//TODO: not working. Need with between MERGE and MATCH and need different variable for second p.
 			Node n = entry.entity();
 			StringBuilder query = new StringBuilder();
 			query.append(matchNode(n.getId()));
-			if (entry.previouslyCommitedValue() != null) {
-				query.append(setProperty(timestamp, true, entry.key(), propertyString(entry.value())));
+			Object previousValue = entry.previouslyCommitedValue();
+			if (previousValue != null) {
+				query.append(setProperty(timestamp, true, entry.key(), propertyString(previousValue)))
+					.append(' ');
 			}
 			if (!remove) {
 				query.append(setProperty(timestamp, false, entry.key(), propertyString(entry.value())));
 			}
-			logger.info("My query: " + query);
+			dbConnection.executeQuery(query);
 		}
 	}
 	
@@ -87,10 +98,39 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 			Node n = entry.node();
 			StringBuilder query = new StringBuilder();
 			query.append(matchNode(n.getId()));
-			query.append(setProperty(timestamp, remove, "VCSLabel", label.name()));
-			logger.info("My query: " + query);
+			query.append(setProperty(timestamp, remove, "VCSLabel", propertyString(label.name())));
+			dbConnection.executeQuery(query);
 		}
 	}
+	
+	private StringBuilder matchNode(long id) {
+		return matchNode(id, "n");
+	}
+	
+	private StringBuilder matchNode(long id, CharSequence nodeIdentifier) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("MATCH (").append(nodeIdentifier).append(":VCSNode)-[r1:VCShas {to:")
+			.append(Long.MAX_VALUE).append("}]->(:VCSID {id:").append(id).append("}) ");
+		return sb;
+	}
+	
+	private StringBuilder setProperty(long timestamp, boolean remove, CharSequence propName,
+		CharSequence propValue) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("MERGE (p:VCSProperty {").append(propName).append(':').append(propValue);
+		if (remove) {
+			sb.append("}) MATCH n-[r2:VCShas {to:").append(Long.MAX_VALUE).append("}]->p")
+				.append(" SET r2.to=").append(timestamp);
+		}
+		else
+			sb.append("}) CREATE n-[:VCShas {from:").append(timestamp).append(", to:")
+				.append(Long.MAX_VALUE).append("}]->p ");
+		return sb;
+	}
+	
+	//================================================================================
+	// Relationship methods
+	//================================================================================
 	
 	private void writeChangedRelationships(Iterable<Relationship> relationships,
 		long timestamp, boolean delete) {
@@ -106,7 +146,6 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 				query.append(matchRelationship(r));
 				query.append("SET r.to=").append(timestamp);
 			}
-			logger.info("My query: " + query);
 		}
 	}
 	
@@ -117,21 +156,7 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 			StringBuilder query = setRelationshipProperty(entry.entity().getId(), timestamp, delete,
 				entry.key(),
 				propertyString(entry.value()));
-			logger.info("My query: " + query);
 		}
-	}
-	
-	//some Methods creating parts of a query:
-	
-	private StringBuilder matchNode(long id) {
-		return matchNode(id, "n");
-	}
-	
-	private StringBuilder matchNode(long id, CharSequence nodeIdentifier) {
-		StringBuilder sb = new StringBuilder();
-		sb.append("MATCH (").append(nodeIdentifier).append(")-[r1:VCShas {to:")
-			.append(Long.MAX_VALUE).append("}]->(:VCSID {id:").append(id).append("}) ");
-		return sb;
 	}
 	
 	private StringBuilder matchRelationship(Relationship r) {
@@ -154,27 +179,20 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 		return sb;
 	}
 	
-	private StringBuilder setProperty(long timestamp, boolean remove, CharSequence propName,
-		CharSequence propValue) {
-		StringBuilder sb = new StringBuilder();
-		sb.append("MERGE (p:VCSProperty {").append(propName).append(':').append(propValue);
-		if (remove) {
-			sb.append("}) MATCH n-[r2:VCShas {to:").append(Long.MAX_VALUE).append("}]->p")
-				.append(" SET r2.to=").append(timestamp);
-		}
-		else
-			sb.append("}) CREATE n-(:VCShas {from:").append(timestamp).append(", to:")
-				.append(Long.MAX_VALUE).append("})->p ");
-		return sb;
-	}
+	//================================================================================
+	// end important methods
+	//================================================================================
 	
 	/**
 	 * Converts the property into a string usable as input to a neo4j database.
+	 * <p>
+	 * Returning StringBuilder for performance reasons. Is faster when being further concatenated.
 	 * 
-	 * Returning StringBuilder for performance issues. Is faster when being further concatenated.
+	 * @category Helper
 	 * 
-	 * @param property
-	 * @return
+	 * @param property A property returned by a {@link TransactionData} object.
+	 * 
+	 * @return A representation of the property that can be used for cypher queries.
 	 */
 	public static StringBuilder propertyString(Object property) {
 		return new StringBuilder().append('"').append(property.toString()).append('"');
@@ -187,7 +205,6 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 	
 	@Override
 	public Void beforeCommit(TransactionData data) throws Exception {
-		logger.info("Before commit called");
 		// don't care
 		return null;
 	}
