@@ -7,9 +7,6 @@ import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import org.neo4j.jdbc.Driver;
-import org.neo4j.jdbc.Neo4jConnection;
-
 public class DatabaseConnection {
 	
 	private Logger logger = Logger.getLogger("de.lehrbaum.neo4jVersionControl.io");
@@ -32,6 +29,7 @@ public class DatabaseConnection {
 			Properties prop = new Properties();
 			prop.setProperty("user", "neo4j");
 			prop.setProperty("password", "12345");
+			//TODO: save not executed query in case of error. reconnect.
 			connection = new Driver().connect("jdbc:neo4j://" + databaseUrl, prop);
 		} catch (SQLException e) {
 			logger.log(Level.SEVERE, "Problem when connecting to database.", e);
@@ -42,8 +40,10 @@ public class DatabaseConnection {
 	}
 	
 	public synchronized void executeQuery(CharSequence query) {
-		//new queryRunnable(query).run();
 		queryExecutor.execute(new queryRunnable(query));
+		//use queryExecutor.shutdownNow() in case of connection error.
+		//set flag that says if the last query was successful. write unsuccessful operations 
+		//in a file on disk to have them permanently.
 	}
 	
 	private class queryRunnable implements Runnable {

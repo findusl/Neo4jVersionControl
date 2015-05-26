@@ -24,9 +24,17 @@ public class VersionControl extends ServerPlugin {
 		@Description("The url of the backup database. e.g. localhost:7474") @Parameter(
 			name = "database_url") String databaseUrl)
 	{
+		//TODO: execute sync
 		logger.info("start version control called.");
-		listener = new ChangeEventListener(new DatabaseConnection(databaseUrl));
+		DatabaseConnection con = new DatabaseConnection(databaseUrl);
+		sync(graphDb, con);
+		listener = new ChangeEventListener(con);
 		graphDb.registerTransactionEventHandler(listener);
+	}
+	
+	private void sync(GraphDatabaseService graphDb, DatabaseConnection con) {
+		//get all nodes and write them. use transactional context
+		
 	}
 	
 	@Description("Stop the version control of this database.")

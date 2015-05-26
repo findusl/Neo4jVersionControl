@@ -1,6 +1,8 @@
 package de.lehrbaum.neo4jVersionControl;
 
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -14,7 +16,7 @@ import org.neo4j.graphdb.event.TransactionEventHandler;
 
 import de.lehrbaum.neo4jVersionControl.io.DatabaseConnection;
 
-public class ChangeEventListener implements TransactionEventHandler<Void> {
+public class ChangeEventListener implements TransactionEventHandler<List<Node[]>> {
 	
 	private Logger logger = Logger.getLogger("de.lehrbaum.neo4jVersionControl");
 	
@@ -29,7 +31,7 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 	}
 	
 	@Override
-	public void afterCommit(TransactionData data, Void arg1) {
+	public void afterCommit(TransactionData data, List<Node[]> relationshipNodes) {
 		logger.info("After commit called.");
 		// write changes to database
 		// maybe use multithreading for different attribute types
@@ -40,10 +42,10 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 			writeChangedNodeProperties(data.removedNodeProperties(), timestamp, true);
 			writeChangedNodeLabels(data.assignedLabels(), timestamp, false);
 			writeChangedNodeLabels(data.removedLabels(), timestamp, true);
-			writeChangedRelationships(data.createdRelationships(), timestamp, false);
+			writeChangedRelationships(data.createdRelationships(), timestamp, relationshipNodes);
 			writeChangedRelationshipProperties(data.assignedRelationshipProperties(), timestamp, false);
 			writeChangedRelationshipProperties(data.removedRelationshipProperties(), timestamp, true);
-			writeChangedRelationships(data.deletedRelationships(), timestamp, true);
+			writeChangedRelationships(data.deletedRelationships(), timestamp, null);
 			writeChangedNodes(data.deletedNodes(), timestamp, true);
 		} catch (Exception e) {
 			logger.log(Level.SEVERE, "Problem", e);
@@ -71,13 +73,13 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 		long timestamp, boolean remove) {
 		for (PropertyEntry<Node> entry : properties) {
 			/*
-			 * MATCH (n:VCSNode)-[r1:VCShas {to:9223372036854775807}]->(:VCSID {id:0}) 
+			 * MATCH (n:VCSNode)-[r1:VCShas {to:9223372036854775807}]->(:VCSID {id:0})
 			 * MERGE (p:VCSProperty {name:"John"}) WITH n, p
 			 * MATCH n-[r2:VCShas {to:9223372036854775807}]->p 
 			 * SET r2.to=1432506654808 
 			 * MERGE (p2:VCSProperty {name:"Max"}) 
 			 * CREATE n-[:VCShas {from:1432506654808, to:9223372036854775807}]->p2
-			 * */
+			 */
 			Node n = entry.entity();
 			StringBuilder query = new StringBuilder(210);
 			query.append(matchNode(n.getId()));
@@ -146,26 +148,48 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 	// Relationship methods
 	//================================================================================
 	
+	@Override
+	public List<Node[]> beforeCommit(TransactionData data) throws Exception {
+		/*
+		 * Need to get the nodes before commit because i can't afterwards.
+		 */
+		Iterator<Relationship> relationships = data.createdRelationships().iterator();
+		//TODO: for consistency reasons also add the relationship id to check afterwards.
+		ArrayList<Node[]> nodes = new ArrayList<Node[]>();
+		for (int i = 0; relationships.hasNext(); i++) {
+			Relationship r = relationships.next();
+			nodes.add(r.getNodes());
+		}
+		return nodes;
+	}
+	
 	private void writeChangedRelationships(Iterable<Relationship> relationships,
-		long timestamp, boolean delete) {
-		for (Relationship r : relationships) {
-			StringBuilder query = new StringBuilder();
-			if (!delete) {
-				logger.info(Arrays.toString(r.getNodes()));
-				query.append(matchNode(r.getStartNode().getId(), "ns"));
-				query.append(matchNode(r.getEndNode().getId(), "ne"));
+		long timestamp, List<Node[]> relationshipNodes) {
+		if (relationshipNodes != null) {
+			Iterator<Node[]> relNodes = relationshipNodes.iterator();
+			for (Relationship r : relationships) {
+				StringBuilder query = new StringBuilder();
+				Node[] nodes = relNodes.next();
+				query.append(matchNode(nodes[0].getId(), "ns"));
+				query.append(matchNode(nodes[1].getId(), "ne"));
 				query.append("CREATE ns-[:").append(r.getType().name()).append(" {VCSID:")
 					.append(r.getId()).append(", from:").append(timestamp).append(", to:")
 					.append(Long.MAX_VALUE).append("}]->ne ");
 				query.append("MERGE (nRel:VCSRel{id:").append(r.getId()).append("}) ");
 				query.append(setRelationshipProperty(timestamp, false, "VCSType", r.getType().name()));
-			} else {
+				
+				dbConnection.executeQuery(query);
+			}
+		} else {
+			for (Relationship r : relationships) {
+				StringBuilder query = new StringBuilder();
 				query.append("MERGE (nRel:VCSRel{id:").append(r.getId()).append("}) ");
 				query.append(setRelationshipProperty(timestamp, true, "VCSType", r.getType().name()));
 				query.append(matchRelationship(r));
 				query.append("SET r.to=").append(timestamp);
+				
+				dbConnection.executeQuery(query);
 			}
-			dbConnection.executeQuery(query);
 		}
 	}
 	
@@ -191,11 +215,8 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 	
 	private StringBuilder matchRelationship(Relationship r) {
 		StringBuilder sb = new StringBuilder();
-		logger.info(Arrays.toString(r.getNodes()));
-		sb.append(matchNode(r.getStartNode().getId(), "ns"));
-		sb.append(matchNode(r.getEndNode().getId(), "ne"));
-		sb.append("MATCH ns-[r {id:").append(r.getId()).append(", to:").append(Long.MAX_VALUE)
-			.append("}]->ne ");
+		sb.append("MATCH ()-[r {id:").append(r.getId()).append(", to:").append(Long.MAX_VALUE)
+			.append("}]->() ");
 		return sb;
 	}
 	
@@ -215,9 +236,9 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 		sb.append("MERGE (").append(propNodeId).append(":VCSProperty {").append(propName).append(':')
 			.append(propValue);
 		if (remove) {
-			sb.append("}) MATCH ").append("-[r").append(propNodeId).append(":VCShas {to:")
+			sb.append("}) MATCH ").append("-[r3").append(propNodeId).append(":VCShas {to:")
 				.append(Long.MAX_VALUE).append("}]->").append(propNodeId);
-			sb.append(" SET r.to=").append(timestamp).append(' ');
+			sb.append(" SET r3.to=").append(timestamp).append(' ');
 		} else {
 			sb.append("}) CREATE ").append("-[").append(propNodeId).append(":VCShas {from:")
 				.append(timestamp).append(", to:").append(Long.MAX_VALUE).append("}]->")
@@ -251,14 +272,8 @@ public class ChangeEventListener implements TransactionEventHandler<Void> {
 	}
 	
 	@Override
-	public void afterRollback(TransactionData data, Void state) {
+	public void afterRollback(TransactionData data, List<Node[]> relationshipNodes) {
 		// don't care
-	}
-	
-	@Override
-	public Void beforeCommit(TransactionData data) throws Exception {
-		// don't care
-		return null;
 	}
 	
 }
