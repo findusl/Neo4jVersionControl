@@ -7,6 +7,9 @@ import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.neo4j.jdbc.Driver;
+import org.neo4j.jdbc.Neo4jConnection;
+
 public class DatabaseConnection {
 	
 	private Logger logger = Logger.getLogger("de.lehrbaum.neo4jVersionControl.io");

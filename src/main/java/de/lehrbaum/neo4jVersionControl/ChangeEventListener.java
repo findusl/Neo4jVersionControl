@@ -1,8 +1,7 @@
 package de.lehrbaum.neo4jVersionControl;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -14,9 +13,10 @@ import org.neo4j.graphdb.event.PropertyEntry;
 import org.neo4j.graphdb.event.TransactionData;
 import org.neo4j.graphdb.event.TransactionEventHandler;
 
+import de.lehrbaum.neo4jVersionControl.ChangeEventListener.RelationshipData;
 import de.lehrbaum.neo4jVersionControl.io.DatabaseConnection;
 
-public class ChangeEventListener implements TransactionEventHandler<List<Node[]>> {
+public class ChangeEventListener implements TransactionEventHandler<Map<Long, RelationshipData>> {
 	
 	private Logger logger = Logger.getLogger("de.lehrbaum.neo4jVersionControl");
 	
@@ -31,8 +31,7 @@ public class ChangeEventListener implements TransactionEventHandler<List<Node[]>
 	}
 	
 	@Override
-	public void afterCommit(TransactionData data, List<Node[]> relationshipNodes) {
-		logger.info("After commit called.");
+	public void afterCommit(TransactionData data, Map<Long, RelationshipData> relationshipNodes) {
 		// write changes to database
 		// maybe use multithreading for different attribute types
 		try {
@@ -115,6 +114,7 @@ public class ChangeEventListener implements TransactionEventHandler<List<Node[]>
 		StringBuilder sb = new StringBuilder(75);
 		sb.append("MATCH (").append(nodeIdentifier).append(":VCSNode)-[r1:VCShas {to:")
 			.append(Long.MAX_VALUE).append("}]->(:VCSID {id:").append(id).append("}) ");
+		//MATCH (:VCSNode)-[r1:VCShas {to:922...}]->(:VCSID {id:42}) SET r1.to=
 		return sb;
 	}
 	
@@ -149,42 +149,36 @@ public class ChangeEventListener implements TransactionEventHandler<List<Node[]>
 	//================================================================================
 	
 	@Override
-	public List<Node[]> beforeCommit(TransactionData data) throws Exception {
+	public Map<Long, RelationshipData> beforeCommit(TransactionData data) throws Exception {
 		/*
 		 * Need to get the nodes before commit because i can't afterwards.
 		 */
-		Iterator<Relationship> relationships = data.createdRelationships().iterator();
-		//TODO: for consistency reasons also add the relationship id to check afterwards.
-		ArrayList<Node[]> nodes = new ArrayList<Node[]>();
-		for (int i = 0; relationships.hasNext(); i++) {
-			Relationship r = relationships.next();
-			nodes.add(r.getNodes());
+		HashMap<Long, RelationshipData> relationshipNodes = new HashMap<Long, RelationshipData>();
+		for (Relationship r : data.createdRelationships()) {
+			RelationshipData rData = new RelationshipData(propertyString(r.getType().name()),
+				r.getStartNode().getId(), r.getEndNode().getId());
+			relationshipNodes.put(r.getId(), rData);
 		}
-		return nodes;
+		return relationshipNodes;
 	}
 	
 	private void writeChangedRelationships(Iterable<Relationship> relationships,
-		long timestamp, List<Node[]> relationshipNodes) {
+		long timestamp, Map<Long, RelationshipData> relationshipNodes) {
 		if (relationshipNodes != null) {
-			Iterator<Node[]> relNodes = relationshipNodes.iterator();
 			for (Relationship r : relationships) {
 				StringBuilder query = new StringBuilder();
-				Node[] nodes = relNodes.next();
-				query.append(matchNode(nodes[0].getId(), "ns"));
-				query.append(matchNode(nodes[1].getId(), "ne"));
-				query.append("CREATE ns-[:").append(r.getType().name()).append(" {VCSID:")
-					.append(r.getId()).append(", from:").append(timestamp).append(", to:")
-					.append(Long.MAX_VALUE).append("}]->ne ");
-				query.append("MERGE (nRel:VCSRel{id:").append(r.getId()).append("}) ");
-				query.append(setRelationshipProperty(timestamp, false, "VCSType", r.getType().name()));
+				RelationshipData rData = relationshipNodes.get(r.getId());
+				query.append(matchNode(rData.startNodeId, "ns"));
+				query.append(matchNode(rData.endNodeId, "ne"));
+				query.append("CREATE ns-[:VCSRelationship {VCSID:").append(r.getId()).append(", from:")
+					.append(timestamp).append(", to:").append(Long.MAX_VALUE).append(", VCSType:")
+					.append(rData.type).append("}]->ne ");
 				
 				dbConnection.executeQuery(query);
 			}
 		} else {
 			for (Relationship r : relationships) {
 				StringBuilder query = new StringBuilder();
-				query.append("MERGE (nRel:VCSRel{id:").append(r.getId()).append("}) ");
-				query.append(setRelationshipProperty(timestamp, true, "VCSType", r.getType().name()));
 				query.append(matchRelationship(r));
 				query.append("SET r.to=").append(timestamp);
 				
@@ -247,8 +241,21 @@ public class ChangeEventListener implements TransactionEventHandler<List<Node[]>
 		return sb;
 	}
 	
+	static class RelationshipData {
+		CharSequence type;
+		long startNodeId;
+		long endNodeId;
+		
+		public RelationshipData(CharSequence type, long startNodeId, long endNodeId) {
+			super();
+			this.type = type;
+			this.startNodeId = startNodeId;
+			this.endNodeId = endNodeId;
+		}
+	}
+	
 	//================================================================================
-	// end important methods
+	// helper methods/classes
 	//================================================================================
 	
 	/**
@@ -264,15 +271,14 @@ public class ChangeEventListener implements TransactionEventHandler<List<Node[]>
 	 */
 	public StringBuilder propertyString(Object property) {
 		String stringValue = property.toString();
-		stringValue = stringValue.replaceAll("'", "\\'");
-		logger.warning("Resulting String: " + stringValue);
+		stringValue = stringValue.replace("'", "\\'");
 		//inefficiently creating one string to much. maybe somehow override it to directly return the StringBuilder before making string out of it.
 		
 		return new StringBuilder().append('"').append(stringValue).append('"');
 	}
 	
 	@Override
-	public void afterRollback(TransactionData data, List<Node[]> relationshipNodes) {
+	public void afterRollback(TransactionData data, Map<Long, RelationshipData> relationshipNodes) {
 		// don't care
 	}
 	
