@@ -53,7 +53,7 @@ public class VersionControl extends ServerPlugin {
 			name = "timestamp") String timestamp)
 	{
 		
-		return "MATCH (n) –[r]-> (m) WHERE r.to > " + timestamp + " AND r.from <= "
+		return "MATCH (n) –[r]-> (m) WHERE r.to > " + timestamp + " AND r.from <= " + timestamp
 			+ " RETURN n, r, m";
 	}
 }

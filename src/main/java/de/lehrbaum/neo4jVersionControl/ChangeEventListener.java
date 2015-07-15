@@ -114,7 +114,6 @@ public class ChangeEventListener implements TransactionEventHandler<Map<Long, Re
 		StringBuilder sb = new StringBuilder(75);
 		sb.append("MATCH (").append(nodeIdentifier).append(":VCSNode)-[r1:VCShas {to:")
 			.append(Long.MAX_VALUE).append("}]->(:VCSID {id:").append(id).append("}) ");
-		//MATCH (:VCSNode)-[r1:VCShas {to:922...}]->(:VCSID {id:42}) SET r1.to=
 		return sb;
 	}
 	
@@ -225,16 +224,16 @@ public class ChangeEventListener implements TransactionEventHandler<Map<Long, Re
 		StringBuilder sb = new StringBuilder();
 		/*
 		 * MERGE (p:VCSProperty {prop:value})
-		 * CREATE relNodeId-[:VCShas {from:timestamp, to:max}]->p
+		 * CREATE nRel-[:VCShas {from:timestamp, to:max}]->p
 		 */
 		sb.append("MERGE (").append(propNodeId).append(":VCSProperty {").append(propName).append(':')
 			.append(propValue);
 		if (remove) {
-			sb.append("}) MATCH ").append("-[r3").append(propNodeId).append(":VCShas {to:")
+			sb.append("}) MATCH ").append(relNodeId).append("-[r3").append(":VCShas {to:")
 				.append(Long.MAX_VALUE).append("}]->").append(propNodeId);
 			sb.append(" SET r3.to=").append(timestamp).append(' ');
 		} else {
-			sb.append("}) CREATE ").append("-[").append(propNodeId).append(":VCShas {from:")
+			sb.append("}) CREATE ").append(relNodeId).append("-[").append(":VCShas {from:")
 				.append(timestamp).append(", to:").append(Long.MAX_VALUE).append("}]->")
 				.append(propNodeId);
 		}
