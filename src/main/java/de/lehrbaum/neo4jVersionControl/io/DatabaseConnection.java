@@ -27,11 +27,11 @@ public class DatabaseConnection {
 	 * 
 	 * @param databaseUrl The URL of the database to connect to. e.g. localhost:7474
 	 */
-	public DatabaseConnection(String databaseUrl) {
+	public DatabaseConnection(String databaseUrl, String user, String password) {
 		try {
 			Properties prop = new Properties();
-			prop.setProperty("user", "neo4j");
-			prop.setProperty("password", "12345");
+			prop.setProperty("user", user);
+			prop.setProperty("password", password);
 			//TODO: save not executed query in case of error. reconnect.
 			connection = new Driver().connect("jdbc:neo4j://" + databaseUrl, prop);
 		} catch (SQLException e) {

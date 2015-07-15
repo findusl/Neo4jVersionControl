@@ -21,12 +21,16 @@ public class VersionControl extends ServerPlugin {
 	@Description("Start the version control of this database.")
 	@PluginTarget(GraphDatabaseService.class)
 	public void startVersionControl(@Source GraphDatabaseService graphDb,
-		@Description("The url of the backup database. e.g. localhost:7474") @Parameter(
-			name = "database_url") String databaseUrl)
+		@Description("The url of the backup database. e.g. localhost:7474") 
+		@Parameter(name = "database_url") String databaseUrl,
+		@Description("The username used to access the database")
+		@Parameter(name = "user") String user,
+		@Description("The password used to access the database")
+		@Parameter(name = "password") String password)
 	{
 		//TODO: execute sync
 		logger.info("start version control called.");
-		DatabaseConnection con = new DatabaseConnection(databaseUrl);
+		DatabaseConnection con = new DatabaseConnection(databaseUrl, user, password);
 		sync(graphDb, con);
 		listener = new ChangeEventListener(con);
 		graphDb.registerTransactionEventHandler(listener);
